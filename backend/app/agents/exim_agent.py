@@ -8,16 +8,12 @@ import pandas as pd
 import plotly.graph_objects as go
 from pydantic import BaseModel, Field, validator
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("exim_agent")
 
-# Base API endpoint (Comtrade Plus consolidated endpoint used in original snippet)
-COMTRADE_BASE_URL = os.getenv("COMTRADE_BASE_URL", "https://comtradeplus.un.org/api/get")
-# If you have a private token, place it in the environment variable COMTRADE_API_TOKEN
+COMTRADE_BASE_URL = os.getenv("COMTRADE_BASE_URL", "https://comtradeapi.un.org/public/v1/getComtradeReleases")
 COMTRADE_API_TOKEN = os.getenv("COMTRADE_API_TOKEN")
 
-# Common HS codes for pharmaceutical APIs/formulations
 PHARMA_HS_CODES = {
     "pharmaceuticals": "3004",
     "medicaments": "3004",
@@ -27,7 +23,6 @@ PHARMA_HS_CODES = {
     "alkaloids": "2939",
 }
 
-# Lightweight country name -> numeric reporter code map (extendable)
 COUNTRY_CODE_MAP = {
     "usa": "842", "united states": "842", "us": "842",
     "india": "699", "ind": "699",
@@ -87,7 +82,6 @@ class TradeDataResponse(BaseModel):
     summary: Dict[str, Any]
 
 
-# -------------------- Helper functions -------------------- #
 
 def _build_years_param(start_year: int, end_year: int) -> str:
     """Create a comma-separated list of years for the Comtrade `ps` parameter."""
@@ -146,7 +140,6 @@ def get_comtrade_data(
 
     df = pd.DataFrame(raw["dataset"])
 
-    # Normalise expected columns to our canonical names
     mapping = {
         "yr": "year",
         "Year": "year",
@@ -156,12 +149,10 @@ def get_comtrade_data(
     }
     df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
 
-    # Keep only commonly used columns if present
     keep_cols = [c for c in ("year", "trade_value", "quantity", "flow", "reporter", "partner") if c in df.columns]
     if keep_cols:
         df = df[keep_cols]
 
-    # Ensure numeric types
     if "trade_value" in df.columns:
         df["trade_value"] = pd.to_numeric(df["trade_value"], errors="coerce").fillna(0)
     if "quantity" in df.columns:
@@ -172,7 +163,6 @@ def get_comtrade_data(
     return df
 
 
-# -------------------- Core agent-like functions -------------------- #
 
 def fetch_trade_data(request: TradeDataRequest) -> Dict[str, Any]:
     """High-level wrapper to fetch import/export trade data and summarise it."""
@@ -212,11 +202,9 @@ def fetch_trade_data(request: TradeDataRequest) -> Dict[str, Any]:
 
     combined = pd.concat(data_frames, ignore_index=True, sort=False)
 
-    # Yearly trends
     group = combined.groupby(["year", "flow"], as_index=False).agg({"trade_value": "sum", "quantity": "sum"})
     yearly_trends = group.sort_values(["year", "flow"]).to_dict(orient="records")
 
-    # Top partners (if partner_country == world)
     top_partners = []
     if request.partner_country == "0" and "partner" in combined.columns:
         partners_group = combined.groupby("partner", as_index=False)["trade_value"].sum()
@@ -336,7 +324,6 @@ def compute_sourcing_insights(trade_data: Dict[str, Any], focus_country: Optiona
             "trade_balance": round(total_export - total_import, 2),
         }
 
-    # add CAGR if present
     cagr = trade_data.get("cagr", {})
     if cagr.get("import") is not None:
         insights["market_trends"].append({"type": "import_cagr", "value": cagr["import"], "description": f"Import CAGR: {cagr['import']}%"})
@@ -371,7 +358,6 @@ def create_dependency_table(trade_data: Dict[str, Any], threshold_pct: float = 1
     return {"status": "success", "overall_dependency_ratio": round(overall_dep, 2), "dependency_table": table, "summary": summary}
 
 
-# -------------------- Simple CLI for quick testing -------------------- #
 if __name__ == "__main__":
     import argparse
 
@@ -411,5 +397,4 @@ if __name__ == "__main__":
     insights = compute_sourcing_insights(result)
     dep_table = create_dependency_table(result)
 
-    # Print a short summary
     print(json.dumps({"summary": result.get("summary"), "cagr": result.get("cagr"), "insights": insights.get("insights"), "dependency": dep_table.get("overall_dependency_ratio")}, indent=2))
