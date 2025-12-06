@@ -1,11 +1,21 @@
-langgraph
-requests
+# Core Agent Framework
+pydantic-ai[vertexai]
 pydantic
-pydantic-ai
-python-dotenv
-pandas
-numpy
+pydantic-core
+
+# Google Gemini SDK
 google-generativeai
+
+# Supabase
 supabase
-langchain
-langchain-google-genai
+gotrue
+postgrest
+realtime
+storage3
+
+
+# LangGraph (only if needed in your project—safe with pydantic-ai)
+langgraph
+
+# Utilities
+protobuf

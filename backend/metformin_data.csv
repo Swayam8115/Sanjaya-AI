@@ -1,0 +1,3 @@
+molecule,region,sales_value,sales_volume,cagr,competitors,atc_code,year
+Metformin,US,1200,34000000,3.8,Teva; Sandoz; Lupin,A10BA02,2024
+Metformin,EU,900,22000000,2.4,Sandoz; Accord,A10BA02,2024

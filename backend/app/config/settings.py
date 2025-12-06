@@ -1,13 +1,12 @@
-# config/settings.py
-from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
+import os
+from dotenv import load_dotenv
 
-class Settings(BaseSettings):
-    model_config = ConfigDict(env_file=".env", extra="ignore")
+load_dotenv()
 
-    SUPABASE_URL: str
-    SUPABASE_KEY: str
-
-    GOOGLE_API_KEY: str
+class Settings:
+    def __init__(self):
+        self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY_1")
+        self.SUPABASE_URL = os.getenv("SUPABASE_URL")
+        self.SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 settings = Settings()
