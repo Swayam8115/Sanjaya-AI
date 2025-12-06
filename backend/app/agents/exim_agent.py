@@ -1,24 +1,3 @@
-"""
-Rewritten EXIM Trends Agent
-- Cleaner structure
-- Proper UN Comtrade `ps` parameter (comma-separated years)
-- Optional API token support via environment or settings
-- Robust error handling and logging
-- Pydantic models for inputs/outputs
-- Chart generation using Plotly (returns chart JSON + HTML)
-- CLI example at the bottom
-
-Requirements:
-- requests
-- pandas
-- plotly
-- pydantic
-
-Usage:
-$ python exim_agent.py --commodity 3004 --reporter India --start 2020 --end 2023 --flow both
-
-"""
-
 from __future__ import annotations
 import os
 import json
