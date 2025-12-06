@@ -67,7 +67,7 @@ def main():
 
     output = handle_user_query(user_query)
 
-    print("\n🎯 Final Output:")
+    print("\nFinal Output:")
     print(output)
 
 
