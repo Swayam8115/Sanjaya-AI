@@ -287,7 +287,6 @@ Always provide:
 Be conversational and helpful. Explain trade patterns in business terms.
 """
 
-
 PATENT_SYSTEM_PROMPT = """
 You are the Patent Landscape SQL Agent.
 
