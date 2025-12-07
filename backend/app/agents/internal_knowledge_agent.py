@@ -5,7 +5,7 @@ import pathlib
 from app.config.settings import settings
 from app.utils.prompts import INTERNAL_KNOWLEDGE_SYSTEM_PROMPT
 from app.tools.internal_doc_tool import list_documents,load_document_file,generate_briefing_pdf
-
+from .base_agent import BaseAgent
 
 client = OpenAI(
     api_key=settings.GOOGLE_API_KEY,
@@ -132,6 +132,17 @@ def internal_agent(user_query: str):
         return generate_briefing_pdf(**pdf_args)
 
     return msg.content
+
+class InternalKnowledgeAgent(BaseAgent):
+
+    async def run(self, query: str, context=None):
+        # print("Internal Knowledge Agent CALLED")
+        output = internal_agent(query)
+
+        return {
+            "agent": "Internal Knowledge Agent",
+            "output": output
+        }
 
 
 def main():

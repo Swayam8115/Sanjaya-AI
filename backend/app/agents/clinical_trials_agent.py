@@ -8,6 +8,8 @@ from datetime import datetime
 from app.utils.prompts import CLINICAL_TRIAL_SYSTEM_PROMPT
 from app.tools.fetch_clinical_trial_data import execute_fetch_clinical_trials
 from app.config.settings import settings
+from .base_agent import BaseAgent 
+
 client = OpenAI(
     api_key=settings.GOOGLE_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -263,7 +265,19 @@ def display_report(report: ClinicalTrialsReport):
     
     print("\n" + "="*120 + "\n")
 
-# ==================== Main Execution ====================
+
+class ClinicalTrialsAgent(BaseAgent):
+
+    async def run(self, query: str, context=None):
+        # print("Clinical Trials Agent CALLED")
+        result = run_clinical_trials_agent(query)
+
+        return {
+            "agent": "Clinical Trials Agent",
+            "output": result.model_dump()  # convert pydantic → dict
+        }
+
+# Main Execution 
 
 if __name__ == "__main__":
     query = 'Show me active clinical trials for breast cancer, including sponsor profiles and phase distributions.'

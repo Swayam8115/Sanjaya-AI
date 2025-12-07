@@ -47,7 +47,7 @@ data/
 
 # Cache
 .cache/
-
+generated_reports/
 testing/
 testing.py
 metformin_data.csv

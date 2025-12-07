@@ -3,6 +3,7 @@ from app.config.settings import settings
 import json
 from app.tools.supabase_tool import run_query
 from app.utils.prompts import PATENT_SYSTEM_PROMPT
+from .base_agent import BaseAgent
 
 client = OpenAI(
     api_key=settings.GOOGLE_API_KEY,
@@ -58,6 +59,17 @@ def handle_patent_query(user_query: str):
             }
 
     return {"response": message.content}
+
+class PatentLandscapeAgent(BaseAgent):
+
+    async def run(self, query: str, context=None):
+        # print("Patent Landscape Agent CALLED")
+        result = handle_patent_query(query)
+        
+        return {
+            "agent": "Patent Landscape Agent",
+            "output": result
+        }
 
 def main():
     user_query="Give me active patents for Semaglutide"

@@ -3,6 +3,8 @@ from app.config.settings import settings
 import json
 from app.tools.web_tools import search_all
 from app.utils.prompts import WEB_INTEL_SYSTEM_PROMPT, WEB_INTEL_SUMMARY_PROMPT, MASTER_PROMPT
+from .base_agent import BaseAgent
+
 
 client = OpenAI(
     api_key=settings.GOOGLE_API_KEY,
@@ -173,8 +175,19 @@ def handle_user_query(user_query: str):
     # If no tool used, return LLM content (unlikely with strict prompt)
     return {"response": message["content"]}
 
+class WebIntelligenceAgent(BaseAgent):
+
+    async def run(self, query: str, context=None):
+        # print("Web Intelligence Agent CALLED")
+        result = handle_user_query(query)
+        return {
+            "agent": "Web Intelligence Agent",
+            "output": result.model_dump()
+        }
+
+
 def main():
-    print("\nWeb Intelligence Agent — CLI Mode")
+    print("\nWeb Intelligence Agent ")
     q = input("\nEnter your query: ")
     out = handle_user_query(q)
     print("\nRESULT:  ")
@@ -182,4 +195,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-## Find current guidelines and major RCTs for semaglutide in obesity
