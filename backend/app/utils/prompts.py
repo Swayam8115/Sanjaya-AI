@@ -256,8 +256,6 @@ with:
 Phase 1 → load_document_file  
 Phase 2 → generate_briefing_pdf 
 """
-
-<<<<<<< HEAD
 EXIM_SYSTEM_PROMPT = """
 You are the EXIM (Export-Import) Data Analysis Agent specialized in pharmaceutical trade data.
 
@@ -287,7 +285,6 @@ Always provide:
 
 Be conversational and helpful. Explain trade patterns in business terms.
 """
-=======
 
 PATENT_SYSTEM_PROMPT = """
 You are the Patent Landscape SQL Agent.
@@ -319,7 +316,6 @@ Guidance:
 - If ambiguous, select * to provide full context.
 - Text comparisons should be case-insensitive (e.g., ILIKE) if uncertain, but exact match is preferred if the molecule name is standard.
 """
-<<<<<<< HEAD
 
 MASTER_AGENT_ROUTER_PROMPT = """
 You are the Master Agent Router. You read the user's query and decide which specific
@@ -396,6 +392,4 @@ You will receive outputs from multiple agents. Your job:
 
 Your response MUST follow the SynthOutput schema EXACTLY.
 """
-=======
->>>>>>> d7eb9d541a4b396bf3cb9c51c32666ccb3479618
 >>>>>>> 2c7538f0ffbc7a558606b73559741124bbf45859

@@ -6,11 +6,7 @@ supabase>=2.5.0
 python-dotenv>=1.0.0
 pydantic>=2.7.0
 reportlab
-<<<<<<< HEAD
-langraph
-=======
 pydantic-ai[vertexai]
 plotly>=5.0.0
 pandas>=2.0.0
 requests>=2.31.0
->>>>>>> 2c7538f0ffbc7a558606b73559741124bbf45859

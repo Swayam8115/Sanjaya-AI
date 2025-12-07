@@ -1,6 +1,8 @@
-from __future__ import annotations
-import os
+from openai import OpenAI
+from app.config.settings import settings
+from app.utils.prompts import EXIM_SYSTEM_PROMPT  # define this similar to IQVIA_SYSTEM_PROMPT
 import json
+import os
 import logging
 from typing import Dict, Any, List, Optional
 
@@ -8,26 +10,16 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import pandas as pd
-import plotly.graph_objects as go
 
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
+client = OpenAI(
+    api_key=settings.GOOGLE_API_KEY,
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("exim_agent")
 
-raw_base = os.getenv("COMTRADE_BASE_URL", "https://comtradeapi.un.org/public/v1")
-if raw_base.endswith("/getComtradeReleases"):
-    COMTRADE_ROOT = raw_base.rsplit("/getComtradeReleases", 1)[0]
-else:
-    COMTRADE_ROOT = raw_base.rstrip("/")
-
-TOKEN = os.getenv("COMTRADE_API_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-client = OpenAI(api_key=OPENAI_API_KEY) if OpenAI and OPENAI_API_KEY else None
+COMTRADE_ROOT = os.getenv("COMTRADE_BASE_URL", "https://comtradeapi.un.org/public/v1").rstrip("/")
+COMTRADE_TOKEN = os.getenv("COMTRADE_API_TOKEN")
 
 PHARMA_CODES = {
     "pharmaceuticals": "3004",
@@ -48,242 +40,316 @@ COUNTRIES = {
     "chn": "156",
     "germany": "276",
     "uk": "826",
+    "united kingdom": "826",
+    "gb": "826",
     "japan": "392",
+    "jpn": "392",
     "france": "250",
+    "fra": "250",
 }
 
 session = requests.Session()
-retry = Retry(total=5, backoff_factor=0.8, status_forcelist=[429,500,502,503,504])
+retry = Retry(total=5, backoff_factor=0.8, status_forcelist=[429, 500, 502, 503, 504])
 adapter = HTTPAdapter(max_retries=retry)
 session.mount("https://", adapter)
 session.mount("http://", adapter)
 
-def headers():
-    h = {}
-    if TOKEN:
-        h["Authorization"] = f"Bearer {TOKEN}"
+
+def auth_headers() -> Dict[str, str]:
+    h: Dict[str, str] = {}
+    if COMTRADE_TOKEN:
+        h["Authorization"] = f"Bearer {COMTRADE_TOKEN}"
     return h
 
-def call(endpoint: str, params: Dict[str, Any]):
-    url = f"{COMTRADE_ROOT}{endpoint}"
-    r = session.get(url, params=params, headers=headers(), timeout=60)
+
+def call_endpoint(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    url = f"{COMTRADE_ROOT}{path}"
+    r = session.get(url, params=params, headers=auth_headers(), timeout=60)
     r.raise_for_status()
     return r.json()
 
-def resolve_country(code: str) -> str:
-    c = code.strip().lower()
-    if c in COUNTRIES:
-        return COUNTRIES[c]
-    if c.isdigit():
-        return c
-    return c
 
-def resolve_commodity(code: str) -> str:
-    c = code.strip().lower()
-    return PHARMA_CODES.get(c, code)
+def resolve_country(x: str) -> str:
+    k = x.strip().lower()
+    if k in COUNTRIES:
+        return COUNTRIES[k]
+    if k.isdigit():
+        return k
+    return k
 
-def years(start: int, end: int) -> str:
+
+def resolve_commodity(x: str) -> str:
+    k = x.strip().lower()
+    return PHARMA_CODES.get(k, x)
+
+
+def year_param(start: int, end: int) -> str:
     return ",".join(str(y) for y in range(start, end + 1))
 
-def get_releases():
-    return call("/getComtradeReleases", {"fmt": "json"})
 
-def get_metadata():
-    return call("/getMetadata/C/A/HS", {"fmt": "json"})
+def get_tariffline_data(
+    type_code: str,
+    freq_code: str,
+    cl_code: str,
+    params: Dict[str, Any],
+) -> Dict[str, Any]:
+    path = f"/getDATariffline/{type_code}/{freq_code}/{cl_code}"
+    return call_endpoint(path, params)
 
-def fetch_raw(hs: str, reporter: str, partner: str, start: int, end: int, flow: str):
-    params = {
-        "fmt": "json",
-        "r": reporter,
-        "p": partner,
-        "ps": years(start, end),
-        "px": "HS",
-        "cc": hs,
-        "freq": "A",
-        "type": "C",
-        "flow": flow,
-    }
-    return call("/getDA/C/A/HS", params)
 
-def clean_df(raw: Dict[str, Any]):
-    if not raw or "dataset" not in raw or not raw["dataset"]:
+def clean_dataframe(raw: Dict[str, Any]) -> pd.DataFrame:
+    if not raw:
         return pd.DataFrame()
-
-    df = pd.DataFrame(raw["dataset"])
+    dataset = raw.get("dataset") or raw.get("data") or raw.get("results")
+    if not dataset:
+        return pd.DataFrame()
+    df = pd.DataFrame(dataset)
     rename = {
         "yr": "year",
         "Year": "year",
         "period": "year",
+        "timePeriod": "year",
         "TradeValue": "trade_value",
         "Value": "trade_value",
         "TradeQuantity": "quantity",
+        "Quantity": "quantity",
     }
     df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
-
-    keep = [c for c in ("year", "trade_value", "quantity", "flow", "reporter", "partner") if c in df.columns]
-    if keep:
-        df = df[keep]
-
+    cols = [c for c in ("year", "trade_value", "quantity", "flow", "reporter", "partner") if c in df.columns]
+    if cols:
+        df = df[cols]
     if "trade_value" in df.columns:
         df["trade_value"] = pd.to_numeric(df["trade_value"], errors="coerce").fillna(0)
     if "quantity" in df.columns:
         df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
     if "year" in df.columns:
         df["year"] = pd.to_numeric(df["year"], errors="coerce").astype(pd.Int64Dtype())
-
     return df
 
-def fetch_trade_data(commodity: str, reporter: str, partner: str, start: int, end: int, flow: str):
+
+def fetch_exim_trends(
+    commodity: str,
+    reporter: str,
+    partner: str,
+    start_year: int,
+    end_year: int,
+    flow: str,
+) -> Dict[str, Any]:
     hs = resolve_commodity(commodity)
-    rc = resolve_country(reporter)
-    pc = partner
+    reporter_code = resolve_country(reporter)
+    partner_code = partner
+    flow_lower = flow.lower()
+    if flow_lower == "both":
+        flows = ["X", "M"]
+    elif flow_lower in ("x", "export", "exports"):
+        flows = ["X"]
+    elif flow_lower in ("m", "import", "imports"):
+        flows = ["M"]
+    else:
+        flows = [flow]
 
-    flows = ["X","M"] if flow == "both" else [flow]
-
-    dfs = []
+    frames: List[pd.DataFrame] = []
     for f in flows:
+        params = {
+            "fmt": "json",
+            "reporterCode": reporter_code,
+            "partnerCode": partner_code,
+            "period": year_param(start_year, end_year),
+            "cmdCode": hs,
+            "flowCode": f,
+        }
         try:
-            raw = fetch_raw(hs, rc, pc, start, end, f)
-            df = clean_df(raw)
+            raw = get_tariffline_data("C", "A", "HS", params)
+            df = clean_dataframe(raw)
             if not df.empty:
                 df["flow"] = "Export" if f == "X" else "Import"
-                dfs.append(df)
-        except:
-            pass
+                frames.append(df)
+        except Exception as e:
+            logger.error("Error fetching EXIM data: %s", e)
 
-    if not dfs:
-        return {"status": "no_data"}
+    if not frames:
+        return {"status": "no_data", "message": "No trade data found for given parameters"}
 
-    df = pd.concat(dfs, ignore_index=True)
+    combined = pd.concat(frames, ignore_index=True)
+    if "year" not in combined.columns or "trade_value" not in combined.columns:
+        return {"status": "no_data", "message": "Missing required columns in response"}
 
-    grp = df.groupby(["year","flow"], as_index=False).agg({"trade_value":"sum"})
-    trends = grp.to_dict(orient="records")
+    grouped = combined.groupby(["year", "flow"], as_index=False).agg({"trade_value": "sum"})
+    yearly_trends = grouped.sort_values(["year", "flow"]).to_dict(orient="records")
 
-    partners = []
-    if partner == "0" and "partner" in df.columns:
-        p = df.groupby("partner", as_index=False)["trade_value"].sum()
-        partners = p.sort_values("trade_value", ascending=False).head(10).to_dict(orient="records")
+    top_partners: List[Dict[str, Any]] = []
+    if partner_code == "0":
+        if "partner" in combined.columns:
+            p = combined.groupby("partner", as_index=False)["trade_value"].sum()
+            p = p.sort_values("trade_value", ascending=False).head(10)
+            top_partners = p.to_dict(orient="records")
+        elif "partnerCode" in combined.columns:
+            p = combined.groupby("partnerCode", as_index=False)["trade_value"].sum()
+            p = p.sort_values("trade_value", ascending=False).head(10)
+            top_partners = p.to_dict(orient="records")
 
-    def cagr(rows: List[Dict[str,Any]]):
+    def calc_cagr(rows: List[Dict[str, Any]]) -> Optional[float]:
         if len(rows) < 2:
             return None
-        rows = sorted(rows, key=lambda x: int(x["year"]))
-        s = rows[0]["trade_value"]
-        e = rows[-1]["trade_value"]
-        n = len(rows)-1
-        if s <= 0: return None
-        return round(((e/s)**(1/n) - 1) * 100, 2)
+        rows = sorted(rows, key=lambda r: int(r["year"]))
+        start_val = rows[0]["trade_value"]
+        end_val = rows[-1]["trade_value"]
+        n = len(rows) - 1
+        if start_val <= 0 or n <= 0:
+            return None
+        try:
+            return round(((end_val / start_val) ** (1 / n) - 1) * 100, 2)
+        except Exception:
+            return None
 
-    exp = [r for r in trends if r["flow"]=="Export"]
-    imp = [r for r in trends if r["flow"]=="Import"]
+    exports = [r for r in yearly_trends if r["flow"] == "Export"]
+    imports = [r for r in yearly_trends if r["flow"] == "Import"]
+    total_export = sum(r["trade_value"] for r in exports)
+    total_import = sum(r["trade_value"] for r in imports)
 
     summary = {
-        "total_export_value": sum(r["trade_value"] for r in exp),
-        "total_import_value": sum(r["trade_value"] for r in imp),
-        "data_points": len(trends),
+        "total_export_value": total_export,
+        "total_import_value": total_import,
+        "data_points": len(yearly_trends),
     }
 
     return {
         "status": "success",
         "commodity_code": hs,
-        "reporter_country": rc,
-        "partner_country": pc,
-        "period": f"{start}-{end}",
-        "yearly_trends": trends,
-        "top_partners": partners,
-        "cagr": {"export": cagr(exp), "import": cagr(imp)},
+        "reporter_country": reporter_code,
+        "partner_country": partner_code,
+        "period": f"{start_year}-{end_year}",
+        "yearly_trends": yearly_trends,
+        "top_partners": top_partners,
+        "cagr": {
+            "export": calc_cagr(exports),
+            "import": calc_cagr(imports),
+        },
         "summary": summary,
     }
 
-def generate_chart(data: Dict[str,Any], chart_type="line"):
-    df = pd.DataFrame(data["yearly_trends"])
-    fig = go.Figure()
-    for flow, g in df.groupby("flow"):
-        x = g["year"].astype(int).tolist()
-        y = g["trade_value"].astype(float).tolist()
-        if chart_type == "line":
-            fig.add_trace(go.Scatter(x=x, y=y, mode="lines+markers", name=flow))
-        elif chart_type == "bar":
-            fig.add_trace(go.Bar(x=x, y=y, name=flow))
-        else:
-            fig.add_trace(go.Scatter(x=x, y=y, fill="tozeroy", name=flow))
-    fig.update_layout(title="Trade Trends", xaxis_title="Year", yaxis_title="Trade Value (USD)")
-    return fig.to_html(include_plotlyjs="cdn")
 
-def insights(data: Dict[str,Any]):
-    y = data["yearly_trends"]
-    imp = sorted([r for r in y if r["flow"]=="Import"], key=lambda x: int(x["year"]))
-    exp = sorted([r for r in y if r["flow"]=="Export"], key=lambda x: int(x["year"]))
+def compute_insights(trade_data: Dict[str, Any]) -> Dict[str, Any]:
+    if trade_data.get("status") != "success":
+        return {"status": "error", "message": "Invalid trade data"}
+    yearly = trade_data["yearly_trends"]
+    imports = sorted([r for r in yearly if r["flow"] == "Import"], key=lambda x: int(x["year"]))
+    exports = sorted([r for r in yearly if r["flow"] == "Export"], key=lambda x: int(x["year"]))
 
-    def yoy(arr):
-        if len(arr)<2: return None
-        a,b = arr[-2]["trade_value"], arr[-1]["trade_value"]
-        if a==0: return None
-        return round(((b/a)-1)*100,2)
+    def yoy(arr: List[Dict[str, Any]]) -> Optional[float]:
+        if len(arr) < 2:
+            return None
+        prev_val = arr[-2]["trade_value"]
+        curr_val = arr[-1]["trade_value"]
+        if prev_val == 0:
+            return None
+        return round(((curr_val / prev_val) - 1) * 100, 2)
 
-    inc = yoy(imp)
-    exc = yoy(exp)
+    imp_yoy = yoy(imports)
+    exp_yoy = yoy(exports)
 
-    s = data["summary"]
-    ti, te = s["total_import_value"], s["total_export_value"]
-    tt = ti+te
+    summary = trade_data["summary"]
+    total_import = float(summary["total_import_value"])
+    total_export = float(summary["total_export_value"])
+    total_trade = total_import + total_export
+    import_ratio = (total_import / total_trade) * 100 if total_trade > 0 else 0.0
 
-    dep = (ti/tt)*100 if tt>0 else 0
-
-    return {
+    insights = {
         "market_trends": {
-            "import_yoy": inc,
-            "export_yoy": exc,
-            "import_cagr": data["cagr"]["import"],
-            "export_cagr": data["cagr"]["export"]
+            "import_yoy": imp_yoy,
+            "export_yoy": exp_yoy,
+            "import_cagr": trade_data["cagr"]["import"],
+            "export_cagr": trade_data["cagr"]["export"],
         },
         "dependency_metrics": {
-            "import_dependency_ratio": round(dep,2),
-            "is_net_importer": ti>te,
-            "trade_balance": round(te-ti,2),
+            "import_dependency_ratio": round(import_ratio, 2),
+            "is_net_importer": total_import > total_export,
+            "trade_balance": round(total_export - total_import, 2),
         },
-        "top_suppliers": data["top_partners"]
+        "top_suppliers": trade_data.get("top_partners", []),
     }
+    return insights
 
-def openai_summary(data: Dict[str,Any], ins: Dict[str,Any]):
-    if not client:
-        return {"status":"error","message":"OpenAI not configured"}
-    payload = {"summary":data["summary"],"cagr":data["cagr"],"top":data["top_partners"],"insights":ins}
-    prompt = f"Provide an EXIM analysis summary:\n{json.dumps(payload)}"
-    r = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role":"user","content":prompt}],
-        max_tokens=400
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_exim_trends",
+            "description": "Fetch EXIM trade trends for a given HS code and reporter/partner over a time range.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "commodity": {"type": "string"},
+                    "reporter": {"type": "string"},
+                    "partner": {"type": "string", "description": "Partner country code, '0' for World"},
+                    "start_year": {"type": "integer"},
+                    "end_year": {"type": "integer"},
+                    "flow": {
+                        "type": "string",
+                        "description": "X for exports, M for imports, both for both directions",
+                    },
+                },
+                "required": ["commodity", "reporter", "start_year", "end_year", "flow"],
+            },
+        },
+    }
+]
+
+
+def handle_user_query(user_query: str):
+    response = client.chat.completions.create(
+        model="gemini-2.5-flash",
+        messages=[
+            {"role": "system", "content": EXIM_SYSTEM_PROMPT},
+            {"role": "user", "content": user_query},
+        ],
+        tools=tools,
+        tool_choice="auto",
     )
-    return {"status":"success", "summary": r.choices[0].message.content}
+
+    message = response.choices[0].message
+
+    if message.tool_calls:
+        tool_call = message.tool_calls[0]
+        fn_name = tool_call.function.name
+        args = json.loads(tool_call.function.arguments)
+
+        if fn_name == "fetch_exim_trends":
+            trade = fetch_exim_trends(
+                commodity=args["commodity"],
+                reporter=args["reporter"],
+                partner=args.get("partner", "0"),
+                start_year=int(args["start_year"]),
+                end_year=int(args["end_year"]),
+                flow=args["flow"],
+            )
+            if trade.get("status") != "success":
+                return {
+                    "tool": fn_name,
+                    "args": args,
+                    "trade_data": trade,
+                }
+            ins = compute_insights(trade)
+            return {
+                "tool": fn_name,
+                "args": args,
+                "trade_data": trade,
+                "insights": ins,
+            }
+
+        return {"error": f"Unknown tool called: {fn_name}", "raw_args": args}
+
+    return {"response": message.content}
+
+
+def main():
+    print("\nEXIM Trends Agent — CLI Mode")
+    user_query = input("\nEnter your query: ")
+    output = handle_user_query(user_query)
+    print("\nFinal Output:")
+    print(json.dumps(output, indent=2))
+
 
 if __name__ == "__main__":
-    import argparse
-
-    p = argparse.ArgumentParser()
-    p.add_argument("--commodity", required=True)
-    p.add_argument("--reporter", required=True)
-    p.add_argument("--partner", default="0")
-    p.add_argument("--start", type=int, default=2020)
-    p.add_argument("--end", type=int, default=2023)
-    p.add_argument("--flow", default="both")
-    p.add_argument("--no-openai", action="store_true")
-    args = p.parse_args()
-
-    data = fetch_trade_data(args.commodity, args.reporter, args.partner, args.start, args.end, args.flow)
-    if data["status"] != "success":
-        print(json.dumps(data, indent=2))
-        exit()
-
-    ins = insights(data)
-
-    out = {
-        "summary": data["summary"],
-        "cagr": data["cagr"],
-        "insights": ins,
-    }
-
-    if not args.no_openai:
-        out["openai"] = openai_summary(data, ins)
-
-    print(json.dumps(out, indent=2))
+    main()
