@@ -8,7 +8,6 @@ from datetime import datetime
 from app.utils.prompts import CLINICAL_TRIAL_SYSTEM_PROMPT
 from app.tools.fetch_clinical_trial_data import execute_fetch_clinical_trials
 from app.config.settings import settings
-print(settings.GOOGLE_API_KEY)
 client = OpenAI(
     api_key=settings.GOOGLE_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
