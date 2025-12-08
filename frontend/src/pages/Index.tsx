@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import AgentMessage from "@/components/AgentMessage";
 import ProgressTracker from "@/components/ProgressTracker";
 import sanjayaLogo from "@/assets/sanjaya-logo.png";
+import { sendMessageStream } from "@/api";
 
 interface Message {
   id: string;
@@ -41,119 +42,127 @@ const Index = () => {
     scrollToBottom();
   }, [messages, tasks]);
 
-  const handleApiWorkflow = async (moleculeName: string) => {
-    setIsProcessing(true);
-    setMolecule(moleculeName);
-    setProgress(0);
-    setShowReport(false);
+const handleApiWorkflow = async (moleculeName: string) => {
+  setIsProcessing(true);
+  setMolecule(moleculeName);
+  setProgress(0);
+  setShowReport(false);
 
-    // Initial tasks setup
-    const initialTasks: Task[] = [
-      { id: "market", label: "Market Data", emoji: "📊", status: "pending" },
-      { id: "trials", label: "Clinical Trials", emoji: "🧬", status: "pending" },
-      { id: "patent", label: "Patent Landscape", emoji: "📜", status: "pending" },
-      { id: "web", label: "Web Intelligence", emoji: "🌐", status: "pending" },
-      { id: "report", label: "Report Generation", emoji: "🧾", status: "pending" },
-    ];
-    setTasks(initialTasks);
+  const masterId = Date.now().toString();
+  setMessages(prev => [...prev, {
+    id: masterId,
+    role: "master",
+    content: "Understood. Orchestrating agents to research your query...",
+  }]);
 
-    try {
-      // Master Agent acknowledgment
-      const masterId = Date.now().toString();
-      setMessages(prev => [...prev, {
-        id: masterId,
-        role: "master",
-        content: "Understood. Orchestrating agents to research your query...",
-      }]);
-
-      // Start "loading" all tasks to show activity
-      setTasks(prev => prev.map(t => ({ ...t, status: "loading" })));
-      setProgress(20);
-
-      // Call Backend API
-      const data = await import("../api").then(m => m.sendMessage(input));
-
-      // Process results sequentially for visual effect (optional, or just show all)
-      // For now, let's mark all as done and update progress
-
-      // 1. Market Data
-      if (data.results.IQVIA) {
-        setTasks(prev => prev.map(t => t.id === "market" ? { ...t, status: "complete" } : t));
-        const marketId = Date.now().toString() + "m";
-        setMessages(prev => [...prev, {
-          id: marketId,
-          role: "market",
-          content: "✅ Market Data Retrieved",
-        }]);
-        setProgress(40);
-        await new Promise(r => setTimeout(r, 800)); // slight delay for effect
-      }
-
-      // 2. Clinical Trials
-      if (data.results.CLINICAL) {
-        setTasks(prev => prev.map(t => t.id === "trials" ? { ...t, status: "complete" } : t));
-        const trialsId = Date.now().toString() + "c";
-        setMessages(prev => [...prev, {
-          id: trialsId,
-          role: "trials",
-          content: "✅ Clinical Trials Data Retrieved",
-        }]);
-        setProgress(60);
-        await new Promise(r => setTimeout(r, 800));
-      }
-
-      // 3. Patents
-      if (data.results.PATENTS) {
-        setTasks(prev => prev.map(t => t.id === "patent" ? { ...t, status: "complete" } : t));
-        const patentId = Date.now().toString() + "p";
-        setMessages(prev => [...prev, {
-          id: patentId,
-          role: "patent",
-          content: "✅ Patent Landscape Analyzed",
-        }]);
-        setProgress(80);
-        await new Promise(r => setTimeout(r, 800));
-      }
-
-      // 4. Web Intel
-      if (data.results.WEB) {
-        setTasks(prev => prev.map(t => t.id === "web" ? { ...t, status: "complete" } : t));
-        const webId = Date.now().toString() + "w";
-        setMessages(prev => [...prev, {
-          id: webId,
-          role: "web",
-          content: "✅ Web Intelligence Gathered",
-        }]);
-        setProgress(90);
-        await new Promise(r => setTimeout(r, 800));
-      }
-
-      // 5. Synthesis/Report
-      if (data.results.SYNTHESIZED) {
-        setTasks(prev => prev.map(t => t.id === "report" ? { ...t, status: "complete" } : t));
-        const summaryId = Date.now().toString() + "s";
-        setMessages(prev => [...prev, {
-          id: summaryId,
-          role: "master",
-          content: `✅ Analysis Complete. \n\n${data.results.SYNTHESIZED.final_summary || "Report generated."}`,
-        }]);
-        setProgress(100);
-
-        // Navigate to report with data
-        navigate("/report", { state: { molecule: moleculeName, results: data.results } });
-      }
-
-    } catch (error) {
-      console.error("Error calling backend:", error);
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: "master",
-        content: "❌ Error: Failed to communicate with the research agents.",
-      }]);
-    } finally {
-      setIsProcessing(false);
-    }
+  const agentToTaskMap: Record<string, Task> = {
+    "IQVIA Insights Agent": { id: "market", label: "Market Data", emoji: "📊", status: "pending" },
+    "Clinical Trials Agent": { id: "trials", label: "Clinical Trials", emoji: "🧬", status: "pending" },
+    "Patent Landscape Agent": { id: "patent", label: "Patent Landscape", emoji: "📜", status: "pending" },
+    "Web Intelligence Agent": { id: "web", label: "Web Intelligence", emoji: "🌐", status: "pending" },
+    "EXIM Trends Agent": { id: "exim", label: "EXIM Trends", emoji: "🚢", status: "pending" },
+    "Internal Knowledge Agent": { id: "internal", label: "Internal Knowledge", emoji: "📚", status: "pending" },
   };
+
+  const agentRoleMap: Record<string, Message["role"]> = {
+    "IQVIA Insights Agent": "market",
+    "Clinical Trials Agent": "trials",
+    "Patent Landscape Agent": "patent",
+    "Web Intelligence Agent": "web",
+    "EXIM Trends Agent": "web",
+    "Internal Knowledge Agent": "web",
+  };
+
+  try {
+    await sendMessageStream(input, (event) => {
+      switch (event.type) {
+        case "agents_selected":
+          // Create tasks immediately when agents are selected
+          const initialTasks: Task[] = event.selected_agents.map(
+            (agentName: string) => agentToTaskMap[agentName]
+          ).filter(Boolean);
+          
+          initialTasks.push({ 
+            id: "report", 
+            label: "Report Generation", 
+            emoji: "🧾", 
+            status: "pending" 
+          });
+          
+          setTasks(initialTasks);
+          setProgress(10);
+          break;
+
+        case "agent_started":
+          setTasks(prev => prev.map(t => 
+            t.id === agentToTaskMap[event.agent_name]?.id 
+              ? { ...t, status: "loading" } 
+              : t
+          ));
+          break;
+
+        case "agent_completed":
+          setTasks(prev => prev.map(t => 
+            t.id === agentToTaskMap[event.agent_name]?.id 
+              ? { ...t, status: "complete" } 
+              : t
+          ));
+          
+          // Clean up the agent name for display
+          const cleanAgentName = event.agent_name.replace(" Agent", "");
+          
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: (agentRoleMap[event.agent_name] || "master") as Message["role"],
+            content: `✅ ${cleanAgentName} Data Retrieved`,
+          }]);
+          
+          setProgress(prev => Math.min(prev + 15, 80));
+          break;
+
+        case "synthesis_completed":
+          setProgress(90);
+          break;
+
+        case "report_completed":
+          setTasks(prev => prev.map(t => 
+            t.id === "report" ? { ...t, status: "complete" } : t
+          ));
+          setProgress(100);
+          break;
+
+        case "completed":
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: "master",
+            content: `✅ Analysis Complete.`,
+          }]);
+          
+          navigate("/report", { 
+            state: { molecule: moleculeName, results: event.results } 
+          });
+          break;
+
+        case "error":
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: "master",
+            content: `❌ Error: ${event.message}`,
+          }]);
+          break;
+      }
+    });
+  } catch (error) {
+    console.error("Error:", error);
+    setMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      role: "master",
+      content: "❌ Error: Failed to communicate with the research agents.",
+    }]);
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

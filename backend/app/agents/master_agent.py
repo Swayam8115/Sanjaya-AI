@@ -140,12 +140,81 @@ graph.add_edge("report", END)
 master_chain = graph.compile()
 
 
-# PUBLIC ENTRY FUNCTION
+
+
+# Add this NEW function for streaming
+async def run_master_agent_streaming(query: str):
+    """Stream events as the agent progresses"""
+    
+    state = MasterState()
+    
+    # Step 1: Run router and emit selected agents immediately
+    state = await router_node(state, config={"configurable": {"user_query": query}})
+    
+    yield {
+        "type": "agents_selected",
+        "selected_agents": state.selected_agents,
+        "routing_reason": state.routing_reason
+    }
+    
+    # Step 2: Run workers and emit each result as it completes
+    user_query = query
+    for agent_name in state.selected_agents:
+        key, agent = worker_map[agent_name]
+        
+        yield {
+            "type": "agent_started",
+            "agent_name": agent_name,
+            "agent_key": key
+        }
+        
+        output = await agent.run(user_query)
+        state.results[key] = output
+        
+        yield {
+            "type": "agent_completed",
+            "agent_name": agent_name,
+            "agent_key": key,
+            "result": output
+        }
+    
+    # Step 3: Run synthesis
+    yield {
+        "type": "synthesis_started"
+    }
+    
+    state = await synth_node(state, config={"configurable": {"user_query": query}})
+    
+    yield {
+        "type": "synthesis_completed",
+        "synthesized": state.results["SYNTHESIZED"]
+    }
+    
+    # Step 4: Generate report
+    yield {
+        "type": "report_started"
+    }
+    
+    state = await report_node(state, config={"configurable": {"user_query": query}})
+    
+    yield {
+        "type": "report_completed",
+        "report": state.results["REPORT"]
+    }
+    
+    # Final event
+    yield {
+        "type": "completed",
+        "results": state.results
+    }
+
+
+# Keep your original function for non-streaming use
 async def run_master_agent(query: str):
     state = MasterState()
     final = await master_chain.ainvoke(
         state,
         config={"configurable": {"user_query": query}}
     )
-    return final
+    return final, state.selected_agents
 

@@ -8,7 +8,9 @@ const Report = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const results = location.state?.results || {};
-
+  console.log("IQVIA Results:", results.IQVIA);
+  console.log("IQVIA Output:", results.IQVIA?.output);
+  console.log("IQVIA Result:", results.IQVIA?.output?.result);
   const handleDownload = () => {
     if (results.REPORT && results.REPORT.output && results.REPORT.output.file_path) {
       const filePath = results.REPORT.output.file_path;
@@ -83,22 +85,58 @@ const Report = () => {
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-foreground mb-3">Market Insights</h3>
-                  {/* Dynamically render IQVIA data if available, else show raw output for now */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {Array.isArray(iqvia) && iqvia.length > 0 ? (
                       iqvia.map((item: any, idx: number) => (
                         <div key={idx} className="bg-muted rounded-lg p-4">
-                          <p className="text-sm text-muted-foreground">Region: {item.region}</p>
-                          <p className="text-lg font-semibold text-foreground mt-1">Sales: {item.sales_value}</p>
-                          <p className="text-sm text-success mt-1">Growth: {item.cagr || "N/A"}</p>
+                          <p className="text-sm text-muted-foreground mb-1">
+                            Region: <span className="font-medium text-foreground">{item.region || "N/A"}</span>
+                          </p>
+                          <p className="text-lg font-semibold text-foreground mt-2">
+                            Sales: ${item.sales_value?.toLocaleString() || "N/A"}M
+                          </p>
+                          <p className="text-sm text-emerald-600 font-medium mt-1">
+                            CAGR: {item.cagr ? `${item.cagr}%` : "N/A"}
+                          </p>
+                          {item.sales_volume && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Volume: {item.sales_volume?.toLocaleString()} units
+                            </p>
+                          )}
                         </div>
                       ))
                     ) : (
                       <div className="bg-muted rounded-lg p-4 col-span-3">
-                        <p className="text-sm text-foreground">{JSON.stringify(iqvia).slice(0, 300)}...</p>
+                        <p className="text-sm text-muted-foreground">No market data available</p>
                       </div>
                     )}
                   </div>
+                  
+                  {/* Summary Stats */}
+                  {Array.isArray(iqvia) && iqvia.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <div className="grid grid-cols-3 gap-4 text-center">
+                        <div>
+                          <p className="text-2xl font-bold text-foreground">
+                            ${iqvia.reduce((sum: number, item: any) => sum + (item.sales_value || 0), 0).toLocaleString()}M
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Total Sales Value</p>
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold text-foreground">
+                            {iqvia.length}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Regions</p>
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold text-emerald-600">
+                            {(iqvia.reduce((sum: number, item: any) => sum + (item.cagr || 0), 0) / iqvia.length).toFixed(1)}%
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Avg CAGR</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
