@@ -6,8 +6,11 @@ supabase>=2.5.0
 python-dotenv>=1.0.0
 pydantic>=2.7.0
 reportlab
-langraph
+langgraph
 pydantic-ai[vertexai]
 plotly>=5.0.0
 pandas>=2.0.0
 requests>=2.31.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9

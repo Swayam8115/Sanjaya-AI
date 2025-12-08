@@ -173,7 +173,7 @@ def handle_user_query(user_query: str):
         }
     
     # If no tool used, return LLM content (unlikely with strict prompt)
-    return {"response": message["content"]}
+    return {"response": message.content}
 
 class WebIntelligenceAgent(BaseAgent):
 
@@ -182,7 +182,7 @@ class WebIntelligenceAgent(BaseAgent):
         result = handle_user_query(query)
         return {
             "agent": "Web Intelligence Agent",
-            "output": result.model_dump()
+            "output": result
         }
 
 
