@@ -5,7 +5,7 @@ import json
 import os
 import logging
 from typing import Dict, Any, List, Optional
-
+from .base_agent import BaseAgent
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -341,6 +341,19 @@ def handle_user_query(user_query: str):
         return {"error": f"Unknown tool called: {fn_name}", "raw_args": args}
 
     return {"response": message.content}
+
+class EXIMTrendsAgent(BaseAgent):
+
+    async def run(self, query: str, context=None):
+
+        # print("IQVIA Insights Agent CALLED")
+        result = handle_user_query(query)
+
+        return {
+            "agent": "EXIM Trends Agent",
+            "output": result
+        }
+
 
 
 def main():
